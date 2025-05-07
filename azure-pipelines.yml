@@ -1,77 +1,46 @@
-# ASP.NET Core (.NET Framework)
-# Build and test ASP.NET Core projects targeting the full .NET Framework.
-# Add steps that publish symbols, save build artifacts, and more:
-# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
-
-
-trigger: none
-pr: none
+trigger:
+  - Development
 
 pool:
-  vmImage: windows-latest
-
-variables:
-  buildOutput: '$(Build.ArtifactStagingDirectory)/publish'
+  name: Default
 
 steps:
-- checkout: self
-  clean: true
+  # ✅ Install Latest Node.js (22.x for better performance)
+  - task: NodeTool@0
+    inputs:
+      versionSpec: '20.x'
+    displayName: 'Install Node.js 20'
 
-# Step 1: Install .NET SDK
-- task: UseDotNet@2
-  inputs:
-    packageType: 'sdk'
-    version: '8.x'
-    installationPath: $(Agent.ToolsDirectory)/dotnet
+  # ✅ Install Dependencies (Only if node_modules is missing)
+  - script: |
+      if not exist "$(Build.SourcesDirectory)\node_modules" (
+        echo "node_modules not found. Installing dependencies..."
+        npm i --prefer-offline --legacy-peer-deps --concurrency=%NUMBER_OF_PROCESSORS%
+      ) else (
+        echo "Skipping dependency installation as node_modules already exists."
+      )
+    displayName: 'Install Dependencies (Skip if Exists)'
+    workingDirectory: $(Build.SourcesDirectory)
 
-# Step 2: Restore dependencies for all projects
-- script: |
-    echo Restoring dependencies for all projects...
-    for /r "%BUILD_SOURCESDIRECTORY%" %%F in (*.csproj) do (
-      echo Restoring dependencies for %%F...
-      dotnet restore "%%F" || exit /b 1  # Exit if restore fails
-    )
-  displayName: 'Restore Dependencies for All Projects'
-
-# Step 3: Build all projects (fail only on errors)
-- script: |
-    echo Building all projects...
-    for /r "%BUILD_SOURCESDIRECTORY%" %%F in (*.csproj) do (
-      echo Building %%F...
-      dotnet build "%%F" --configuration Release || exit /b 1  # Fail if build error occurs
-    )
-  displayName: 'Build All Projects'
+  # ✅ Run Security Audit (Optional, can be disabled)
+  # ✅ Run Security Audit (Log warnings but do not fail pipeline)
+  #- script: |
+  #    npm audit --audit-level=high || echo "⚠ Security vulnerabilities found. Please review the report."
+  #  displayName: 'Run Security Audit (Warnings Only)'
+  #  continueOnError: true  # This ensures the pipeline does not fail but logs issues
 
 
-# Step 4: Run Unit Tests
-#- script: |
-#    echo Running tests and generating code coverage...
-#    mkdir "$(System.DefaultWorkingDirectory)/TestResults"
-#    for /r "%BUILD_SOURCESDIRECTORY%" %%F in (*Test.csproj) do (
-#      echo Running tests in: %%F
-#      dotnet test "%%F" --configuration Release --no-build --logger trx --collect "Code Coverage" --results-directory "$(System.DefaultWorkingDirectory)/TestResults"
-#    )
-#  displayName: 'Run Unit Tests'
+  # ✅ Build React Application with Multi-Threading
+  - script: |
+      npm run build -- --max-old-space-size=4096 --threads=%NUMBER_OF_PROCESSORS%
+    displayName: 'Build React Application (Optimized)'
+    workingDirectory: $(Build.SourcesDirectory)
 
-- task: VSTest@3
-  inputs:
-    testSelector: 'testAssemblies'
-    testAssemblyVer2: |
-      **/bin/Release/**/*.Test.dll
-    searchFolder: '$(System.DefaultWorkingDirectory)'
-    codeCoverageEnabled: true
-    platform: 'x64'
-    configuration: 'Release'
-    otherConsoleOptions: '/Logger:trx'
-    resultsFolder: '$(testResults)'
-  displayName: 'Run Unit Tests and Collect Code Coverage'
-  continueOnError: true
-- task: PublishTestResults@2
-  inputs:
-    testResultsFiles: '**/*.trx'          # Look for TRX files
-    searchFolder: '$(System.DefaultWorkingDirectory)/TestResults'
-    mergeTestResults: true                # Combine results if multiple exist
-    failTaskOnFailedTests: true           # Mark the pipeline as failed if tests fail
-    testRunTitle: 'Unit Test Results - $(Build.BuildId)'
-  condition: succeededOrFailed()          # Publish results even if tests fail
-  displayName: 'Publish Test Results'
+  # ✅ Validate Build Output
+  - script: |
+      if not exist "$(Build.SourcesDirectory)\build" (
+        echo Build output directory not found!
+        exit /b 1
+      )
+    displayName: 'Validate Build Output'
+
