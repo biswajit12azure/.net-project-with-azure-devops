@@ -1,0 +1,43 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Behaviours\**" />
+    <Compile Remove="Exceptions\**" />
+    <Compile Remove="Wrappers\**" />
+    <EmbeddedResource Remove="Behaviours\**" />
+    <EmbeddedResource Remove="Exceptions\**" />
+    <EmbeddedResource Remove="Wrappers\**" />
+    <None Remove="Behaviours\**" />
+    <None Remove="Exceptions\**" />
+    <None Remove="Wrappers\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="CQRS\Masters\Commands\" />
+    <Folder Include="CQRS\Masters\Queries\" />
+    <Folder Include="Mappings\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AutoMapper" Version="13.0.1" />
+    <PackageReference Include="FluentValidation" Version="11.11.0" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="11.11.0" />
+    <PackageReference Include="LazyCache.AspNetCore" Version="2.4.0" />
+    <PackageReference Include="MediatR.Extensions.Microsoft.DependencyInjection" Version="11.1.0" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="9.0.0" />
+    <PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
+    <PackageReference Include="Serilog.Sinks.MSSqlServer" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\WGL.Utilities\WGL.Utility\WGL.Utility.csproj" />
+    <ProjectReference Include="..\WGL.Auth.Domain\WGL.Auth.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

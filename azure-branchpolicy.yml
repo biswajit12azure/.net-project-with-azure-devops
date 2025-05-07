@@ -1,0 +1,62 @@
+trigger: none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+  - task: AzureCLI@2
+    inputs:
+      azureSubscription: 'azure-s1'  # Your service connection
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        # Set variables
+        ORG_URL="https://dev.azure.com/AltaGasLTD"
+        PROJECT_NAME="eServices Replatforming"
+        REPO_NAME="eServicesReplatforming-BackEnd"
+        BRANCH_NAME="main"
+
+        echo "Fetching Repository ID..."
+        REPO_ID=$(az repos show --org "$ORG_URL" --project "$PROJECT_NAME" --repository "$REPO_NAME" --query id -o tsv)
+
+        echo "Applying branch policies for $REPO_NAME on branch $BRANCH_NAME..."
+
+        # Require a minimum of 2 reviewers
+        az repos policy approver-count create \
+          --org "$ORG_URL" --project "$PROJECT_NAME" \
+          --repository-id "$REPO_ID" \
+          --branch "$BRANCH_NAME" \
+          --minimum-approvers 2 \
+          --blocking true --enabled true
+          
+        echo "✔ Enforced minimum 2 reviewers"
+
+        # Require linked work items
+        az repos policy work-item-linking create \
+          --org "$ORG_URL" --project "$PROJECT_NAME" \
+          --repository-id "$REPO_ID" \
+          --branch "$BRANCH_NAME" \
+          --blocking true --enabled true
+          
+        echo "✔ Enforced work item linking"
+
+        # Require comment resolution before merge
+        az repos policy comment-resolution create \
+          --org "$ORG_URL" --project "$PROJECT_NAME" \
+          --repository-id "$REPO_ID" \
+          --branch "$BRANCH_NAME" \
+          --blocking true --enabled true
+          
+        echo "✔ Enforced comment resolution before merge"
+
+        # Require build validation (Replace <Your-Pipeline-ID> with actual ID)
+        PIPELINE_ID="<Your-Pipeline-ID>"
+        az repos policy build create \
+          --org "$ORG_URL" --project "$PROJECT_NAME" \
+          --repository-id "$REPO_ID" \
+          --branch "$BRANCH_NAME" \
+          --blocking true --enabled true \
+          --queue-on-source-update-only false \
+          --valid-duration 720 --build-definition-id "$PIPELINE_ID"
+
+        echo "✔ Enforced build validation policy"
