@@ -1,0 +1,95 @@
+trigger: none
+pr: none
+
+pool:
+  name: Default  # Use the correct pool
+  demands:
+    - Agent.Name -equals AZWSVDOP101 
+
+variables:
+  SONARQUBE_PROJECT_KEY: 'eServicesReplatforming-BackEnd'
+  SONARQUBE_URL: 'http://10.55.52.6:9000'
+  SONARQUBE_REPORT_PATH: '$(Build.ArtifactStagingDirectory)/sonar-report'
+  DOTNET_LINT_REPORT_PATH: '$(Build.ArtifactStagingDirectory)/dotnet-lint-report'
+
+stages:
+- stage: BuildAndAnalyze
+  jobs:
+  - job: Build
+    steps:
+    - checkout: self
+
+    - task: UseDotNet@2
+      displayName: 'Install .NET SDK'
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'  # Update based on your project
+
+    # Debugging step to check if .csproj files exist
+    - script: |
+        echo "Checking project files..."
+        dir /s /b %BUILD_SOURCESDIRECTORY%\*.csproj
+      displayName: 'Debug: List .csproj Files'
+
+    # Create a .sln file if not already present
+    - script: |
+        echo "Creating solution file..."
+        dotnet new sln --name eServicesReplatforming
+        echo "Adding projects to solution..."
+        for /r "%BUILD_SOURCESDIRECTORY%" %%F in (*.csproj) do (
+          dotnet sln eServicesReplatforming.sln add "%%F"
+        )
+      displayName: 'Create and Add Projects to Solution'
+      
+    # Restore dependencies for all projects
+    - script: |
+        echo "Restoring dependencies for all projects..."
+        dotnet restore eServicesReplatforming.sln
+      displayName: 'Restore Dependencies'
+
+    # Build all projects
+    - script: |
+        echo "Building all projects..."
+        dotnet build eServicesReplatforming.sln --configuration Release --no-restore
+      displayName: 'Build All Projects'
+    
+    - script: |
+        echo "Running .NET Code Formatter..."
+        mkdir "$(DOTNET_LINT_REPORT_PATH)"
+        dotnet format eServicesReplatforming.sln --verbosity diagnostic --report "$(DOTNET_LINT_REPORT_PATH)/lint-report.sarif"
+      displayName: 'Run .NET Linter'
+      continueOnError: true
+      
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Upload .NET Linting Report'
+      inputs:
+        pathToPublish: '$(DOTNET_LINT_REPORT_PATH)'
+        artifactName: 'DotNetLintReport'
+    # Run SonarQube Analysis
+    - script: |
+        echo "Running SonarQube Scanner..."
+        "C:\sonar-scanner\bin\sonar-scanner.bat" ^
+          -Dsonar.projectKey=$(SONARQUBE_PROJECT_KEY) ^
+          -Dsonar.host.url=$(SONARQUBE_URL) ^
+          -Dsonar.login=$(SONARQUBE_TOKEN) ^
+          -Dsonar.sourceEncoding=UTF-8 ^
+          -Dsonar.exclusions="**/bin/**,**/obj/**,**/packages/**,**/node_modules/**,**/wwwroot/**,**/*.dll,**/*.exe" ^
+          -Dsonar.dotnet.visualstudio.solution.file="eServicesReplatforming.sln" ^
+          -Dsonar.verbose=true
+      displayName: 'Run SonarQube Scanner'
+    
+    - script: |
+        echo "Ensuring SonarQube report directory exists..."
+        powershell -Command "& { if (!(Test-Path '$(SONARQUBE_REPORT_PATH)')) { New-Item -ItemType Directory -Path '$(SONARQUBE_REPORT_PATH)' -Force } }"
+
+        echo "Fetching SonarQube Report..."
+        powershell -Command "& { Invoke-WebRequest -Uri '$(SONARQUBE_URL)/api/issues/search?componentKeys=$(SONARQUBE_PROJECT_KEY)&severities=CRITICAL,BLOCKER&statuses=OPEN' -UseBasicParsing -Headers @{Authorization='Basic '+[Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes('$(SONARQUBE_TOKEN):'))} | Select-Object -Expand Content | ConvertFrom-Json | ConvertTo-Json -Depth 10 | Out-File -FilePath '$(SONARQUBE_REPORT_PATH)/sonar.json' }"
+      displayName: 'Download and Format SonarQube JSON Report'
+    
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Upload SonarQube Report'
+      inputs:
+        pathToPublish: '$(SONARQUBE_REPORT_PATH)'
+        artifactName: 'SonarQubeReport'
