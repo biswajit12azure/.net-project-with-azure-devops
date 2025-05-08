@@ -1,0 +1,113 @@
+trigger:
+  branches:
+    include:
+      - release/qa
+  paths:
+    include:
+      - WGL.AccountInquiry/**
+
+pool:
+  name: Default
+  demands:
+    - Agent.Name -equals AZWSVDOP101  # Default to AZWSVDOP101
+
+variables:
+  projectPath: '$(Build.SourcesDirectory)/WGL.AccountInquiry/WGL.AccountInquiry/WGL.AccountInquiry.csproj'
+  buildOutput: '$(Build.ArtifactStagingDirectory)/publish'
+  webAppName: 'WGLHZUS2TESVAS004'
+  resourceGroupName: 'WGLHZUS2TESVRG001'
+  packagePath: '$(Build.ArtifactStagingDirectory)/publish.zip'
+
+steps:
+- checkout: self
+  persistCredentials: true
+  fetchTags: true
+  clean: true
+
+- script: |
+    if /I NOT "$(Agent.Name)"=="AZWSVDOP101" if /I NOT "$(Agent.Name)"=="AZWSVDOP100" (
+      echo Skipping execution on $(Agent.Name)
+      exit /B 1
+    )
+  displayName: "Ensure the job runs only on AZWSVDOP101 or AZWSVDOP100"
+
+- powershell: |
+    git config user.name "Azure DevOps"
+    git config user.email "devops@yourcompany.com"
+
+    $prefix = "qa-ai-"
+
+    git fetch --tags
+
+    # Get tags matching the prefix
+    $latestTag = git tag --list "$prefix*" | Sort-Object {
+      ($_ -replace "^$prefix", '') -as [version]
+    } | Select-Object -Last 1
+
+    Write-Host "Latest tag found: $latestTag"
+
+    if (-not $latestTag) {
+      $newTag = "${prefix}1.0.0"
+    }
+    else {
+      $ver = [version]($latestTag -replace "^$prefix", '')
+      $newVer = "{0}.{1}.{2}" -f $ver.Major, ($ver.Minor + 1), $ver.Build
+      $newTag = "${prefix}$newVer"
+    }
+
+    Write-Host "Creating new tag: $newTag"
+    git tag -a $newTag -m "Auto-tagged release: $newTag"
+    git push origin $newTag
+
+    Write-Host "##vso[task.setvariable variable=newTag]$newTag"
+  displayName: 'Auto-Increment qa-ai Tag'
+
+# Step 1: Install .NET SDK
+- task: UseDotNet@2
+  inputs:
+    packageType: 'sdk'
+    version: '8.x'
+    installationPath: $(Agent.ToolsDirectory)/dotnet
+
+# Step 2: Restore dependencies
+- script: |
+    echo Restoring dependencies...
+    dotnet restore "$(projectPath)"
+  displayName: 'Restore Dependencies'
+
+# Step 3: Build the project
+- script: |
+    echo Building the application...
+    dotnet build "$(projectPath)" --configuration Release --no-restore
+  displayName: 'Build Project'
+
+# Step 4: Publish the application (for artifact generation)
+- script: |
+    echo Publishing the application...
+    dotnet publish "$(projectPath)" --configuration Release --output "$(buildOutput)"
+  displayName: 'Publish Application'
+
+# Step 5: Create a zip package for deployment
+- task: ArchiveFiles@2
+  inputs:
+    rootFolderOrFile: '$(buildOutput)'
+    includeRootFolder: false
+    archiveFile: '$(packagePath)'
+  displayName: 'Create Zip Package'
+
+# Step 6: Publish build artifacts (Optional - Useful for traceability)
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(packagePath)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
+  displayName: 'Publish Build Artifacts'
+
+# Step 7: Deploy to Webapps
+- task: AzureWebApp@1
+  inputs:
+    azureSubscription: 'azure-s1'
+    appName: '$(webAppName)'
+    resourceGroupName: '$(resourceGroupName)'
+    package: '$(packagePath)'
+  displayName: 'Deploy to Azure Web App'

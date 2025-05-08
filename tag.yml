@@ -1,0 +1,47 @@
+trigger:
+  branches:
+    include:
+      - release/qa
+
+pool:
+  name: Default
+  demands:
+    - Agent.Name -equals AZWSVDOP101  # Default to AZWSVDOP101
+
+steps:
+- checkout: self
+  persistCredentials: true
+  clean: true
+  fetchTags: true
+
+- powershell: |
+    git config user.name "Azure DevOps"
+    git config user.email "devops@yourcompany.com"
+
+    $prefix = "qa-auth-"
+
+    git fetch --tags
+
+    # Get tags matching the prefix
+    $latestTag = git tag --list "$prefix*" | Sort-Object {
+      ($_ -replace "^$prefix", '') -as [version]
+    } | Select-Object -Last 1
+
+    Write-Host "Latest tag found: $latestTag"
+
+    if (-not $latestTag) {
+      $newTag = "${prefix}1.0.0"
+    }
+    else {
+      $ver = [version]($latestTag -replace "^$prefix", '')
+      $newVer = "{0}.{1}.{2}" -f $ver.Major, $ver.Minor, ($ver.Build + 1)
+      $newTag = "${prefix}$newVer"
+    }
+
+    Write-Host "Creating new tag: $newTag"
+    git tag -a $newTag -m "Auto-tagged release: $newTag"
+    git push origin $newTag
+
+    Write-Host "##vso[task.setvariable variable=newTag]$newTag"
+  displayName: 'Auto-Increment qa-auth Tag'
+

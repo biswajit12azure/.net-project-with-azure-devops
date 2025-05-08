@@ -1,0 +1,77 @@
+# ASP.NET Core (.NET Framework)
+# Build and test ASP.NET Core projects targeting the full .NET Framework.
+# Add steps that publish symbols, save build artifacts, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+
+
+trigger: none
+pr: none
+
+pool:
+  vmImage: windows-latest
+
+variables:
+  buildOutput: '$(Build.ArtifactStagingDirectory)/publish'
+
+steps:
+- checkout: self
+  clean: true
+
+# Step 1: Install .NET SDK
+- task: UseDotNet@2
+  inputs:
+    packageType: 'sdk'
+    version: '8.x'
+    installationPath: $(Agent.ToolsDirectory)/dotnet
+
+# Step 2: Restore dependencies for all projects
+- script: |
+    echo Restoring dependencies for all projects...
+    for /r "%BUILD_SOURCESDIRECTORY%" %%F in (*.csproj) do (
+      echo Restoring dependencies for %%F...
+      dotnet restore "%%F" || exit /b 1  # Exit if restore fails
+    )
+  displayName: 'Restore Dependencies for All Projects'
+
+# Step 3: Build all projects (fail only on errors)
+- script: |
+    echo Building all projects...
+    for /r "%BUILD_SOURCESDIRECTORY%" %%F in (*.csproj) do (
+      echo Building %%F...
+      dotnet build "%%F" --configuration Release || exit /b 1  # Fail if build error occurs
+    )
+  displayName: 'Build All Projects'
+
+
+# Step 4: Run Unit Tests
+#- script: |
+#    echo Running tests and generating code coverage...
+#    mkdir "$(System.DefaultWorkingDirectory)/TestResults"
+#    for /r "%BUILD_SOURCESDIRECTORY%" %%F in (*Test.csproj) do (
+#      echo Running tests in: %%F
+#      dotnet test "%%F" --configuration Release --no-build --logger trx --collect "Code Coverage" --results-directory "$(System.DefaultWorkingDirectory)/TestResults"
+#    )
+#  displayName: 'Run Unit Tests'
+
+- task: VSTest@3
+  inputs:
+    testSelector: 'testAssemblies'
+    testAssemblyVer2: |
+      **/bin/Release/**/*.Test.dll
+    searchFolder: '$(System.DefaultWorkingDirectory)'
+    codeCoverageEnabled: true
+    platform: 'x64'
+    configuration: 'Release'
+    otherConsoleOptions: '/Logger:trx'
+    resultsFolder: '$(testResults)'
+  displayName: 'Run Unit Tests and Collect Code Coverage'
+  continueOnError: true
+- task: PublishTestResults@2
+  inputs:
+    testResultsFiles: '**/*.trx'          # Look for TRX files
+    searchFolder: '$(System.DefaultWorkingDirectory)/TestResults'
+    mergeTestResults: true                # Combine results if multiple exist
+    failTaskOnFailedTests: true           # Mark the pipeline as failed if tests fail
+    testRunTitle: 'Unit Test Results - $(Build.BuildId)'
+  condition: succeededOrFailed()          # Publish results even if tests fail
+  displayName: 'Publish Test Results'

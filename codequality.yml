@@ -1,0 +1,51 @@
+trigger: none
+pr: none
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  BUILD_CONFIGURATION: 'Release'
+  CODEQL_DB_PATH: '$(Agent.TempDirectory)/codeql-database'
+
+stages:
+- stage: BuildAndCodeQL
+  jobs:
+  - job: CodeQL
+    steps:
+    - checkout: self
+
+    - task: UseDotNet@2
+      displayName: 'Install .NET SDK'
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+
+    - task: AdvancedSecurity-Codeql-Init@1
+      displayName: 'Initialize CodeQL'
+      inputs:
+        languages: 'csharp'
+        buildType: 'manual'
+
+    - script: |
+        echo "Creating solution and adding projects..."
+        if not exist "eServicesReplatforming.sln" (
+          dotnet new sln --name eServicesReplatforming
+        )
+        for /r "%BUILD_SOURCESDIRECTORY%" %%F in (*.csproj) do (
+          dotnet sln eServicesReplatforming.sln add "%%F"
+        )
+      displayName: 'Create and Add Projects to Solution'
+
+    - script: |
+        echo "Restoring dependencies..."
+        dotnet restore eServicesReplatforming.sln
+      displayName: 'Restore Dependencies'
+
+    - task: AdvancedSecurity-Codeql-Autobuild@1
+      displayName: 'Autobuild Solution'
+    
+    - task: AdvancedSecurity-Dependency-Scanning@1
+    
+    - task: AdvancedSecurity-Codeql-Analyze@1
+      displayName: 'Perform CodeQL Analysis'
